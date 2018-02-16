@@ -15,10 +15,17 @@ __version__ = '0.1-dev'
 import argparse
 import base64
 import cmd
-import getpass
+import datetime
+# import getpass
 import logging
 import shelve
 import sys
+
+
+DB = 'pwstore.db'
+DEBUGV = 5
+logging.addLevelName(DEBUGV, 'VERBOSE')
+LEVEL = logging.DEBUG
 
 
 class Prompt(cmd.Cmd):
@@ -80,6 +87,7 @@ def pw_encode(key, clear):
         key_c = key[i % len(key)]
         enc_c = chr((ord(clear[i]) + ord(key_c)) % 256)
         enc.append(enc_c)
+
     return base64.urlsafe_b64encode("".join(enc).encode()).decode()
 
 
@@ -90,6 +98,7 @@ def pw_decode(key, enc):
         key_c = key[i % len(key)]
         dec_c = chr((256 + ord(enc[i]) - ord(key_c)) % 256)
         dec.append(dec_c)
+
     return "".join(dec)
 
 
@@ -98,7 +107,7 @@ def initialize_logger():
     """
 
     logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(LEVEL)
 
     if not logger.handlers:
         logger.propagate = 0
@@ -108,6 +117,7 @@ def initialize_logger():
         format_string = '%(asctime)s - %(levelname)s - %(message)s'
         formatter = logging.Formatter(format_string)
         console.setFormatter(formatter)
+
     return logger
 
 
@@ -155,16 +165,30 @@ def initialize_parser():
     # list all entries in storage
     subcmd_list = subparse.add_parser('list',
                                       help='List all entries in the store.')
-    subcmd_list.add_argument('--force', required=True)
+    subcmd_list.add_argument('--force', required=True, action='store_true')
     subcmd_list.set_defaults(func=pws_list)
 
     # shred all storage
     subcmd_shred = subparse.add_parser('shred',
                                        help='Shred all entries in the store.')
-    subcmd_shred.add_argument('--force', required=True)
+    subcmd_shred.add_argument('--force', required=True, action='store_true')
     subcmd_shred.set_defaults(func=pws_shred)
 
     return parser
+
+
+def initialize_storge():
+    with shelve.open(DB) as s:
+        try:
+            _ = s['_serial']
+        except KeyError:
+            s['_serial'] = 1
+            logging.debug('database initialized')
+        except Exception as e:
+            logging.critical('Exception: {}'.format(e))
+            raise SystemExit
+
+    return None
 
 
 class Entry:
@@ -175,47 +199,119 @@ class Entry:
     date_added = None
     last_updated = None
 
+    def __init__(self, context='', username='', password='', **kwargs):
+        self.context = context
+        self.username = username
+        self.password = password
+        self.note = kwargs.get('note', '')
+        self.last_updated = datetime.datetime.now()
+
+    def __eq__(self, other):
+        return isinstance(other, Entry)
+
+    def __repr__(self):
+        return ('<Entry(context={}, username={}, note={}, last_updated={})>'
+                ''.format(self.context,
+                          self.username,
+                          self.note,
+                          self.last_updated))
+
 
 def pws_add(args):
     """Add entry to storage."""
     logging.debug('in add command')
-    logging.debug('add args: {}'.format(args))
-    master_pw = getpass.getpass()
+    logging.log(DEBUGV, 'add args: {}'.format(args))
+
+    with shelve.open(DB) as s:
+        # get a list of all the keys in storage
+        keylist = list(s.keys())
+        logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+
+        # generate the current key we want to work with
+        ctx = '{}_{}'.format(args.context, args.username)
+
+        # check if it is already in the database
+        res = list(filter(lambda x: x.endswith(ctx), keylist))
+
+        if len(res):
+            logging.warning('Context already in use.')
+        else:
+            logging.debug('unused context')
+
+            entry = Entry(context=args.context,
+                          username=args.username,
+                          password='',
+                          note=args.note)
+
+            logging.log(DEBUGV, entry)
+
+            key = '{}_{}'.format(s['_serial'], ctx)
+            s[key] = entry
+
+            logging.info('Entry added.')
+
+            s['_serial'] = s['_serial'] + 1
+            logging.debug('serial advanced')
+
     return None
 
 
 def pws_remove(args):
     """Remove entry from storage."""
     logging.debug('in remove command')
+
     return None
 
 
 def pws_update(args):
     """Update entry in storage."""
     logging.debug('in update command')
+
     return None
 
 
 def pws_get(args):
     """Get entry from storage."""
     logging.debug('in get command')
-    with shelve.open('pwstore.db') as s:
-        try:
-            print(s['fb'])
-        except KeyError:
-            print('entry not found.')
+
     return None
 
 
 def pws_list(args):
     """List all entries in storage."""
     logging.debug('in list command')
+
+    cols = [14, 14, 14, 20]
+
+    def _sep(cols):
+        print('|-{}-|-{}-|-{}-|-{}-|'.format(''.ljust(cols[0], '-'),
+                                             ''.ljust(cols[1], '-'),
+                                             ''.ljust(cols[2], '-'),
+                                             ''.ljust(cols[3], '-')))
+
+    with shelve.open(DB) as s:
+        _sep(cols)
+        print('| {} | {} | {} | {} |'.format('context'.center(cols[0]),
+                                             'username'.center(cols[1]),
+                                             'password'.center(cols[2]),
+                                             'notes'.center(cols[3])))
+        _sep(cols)
+        keylist = list(s.keys())
+        keylist.remove('_serial')
+        for k in keylist:
+            print('| {} | {} | {} | {} |'.format(s[k].context.ljust(cols[0]),
+                                                 s[k].username.ljust(cols[1]),
+                                                 ''.ljust(cols[2]),
+                                                 str(s[k].note).ljust(cols[3])))
+        _sep(cols)
+
     return None
 
 
 def pws_shred(args):
     """Shred storage (destroys all entries)"""
     logging.debug('in shred command')
+
     return None
 
 
@@ -225,6 +321,8 @@ def main(argv):
 
     parser = initialize_parser()
 
+    initialize_storge()
+
     if len(argv) == 0:
         logger.debug('starting console mode.')
         prompt = Prompt()
@@ -232,9 +330,10 @@ def main(argv):
 
     args = parser.parse_args(argv)
     args.func(args)
-    logger.debug('args: {}'.format(args))
+    logger.log(DEBUGV, 'args: {}'.format(args))
 
     logger.debug('end of line.')
+
     return None
 
 
