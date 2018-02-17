@@ -16,7 +16,8 @@ import argparse
 import base64
 import cmd
 import datetime
-# import getpass
+import getpass
+import hashlib
 import logging
 import shelve
 import sys
@@ -27,6 +28,8 @@ DEBUGV = 5
 logging.addLevelName(DEBUGV, 'VERBOSE')
 LEVEL = logging.INFO
 # LEVEL = DEBUGV
+
+MASTER = None
 
 
 class Prompt(cmd.Cmd):
@@ -183,13 +186,21 @@ def initialize_parser():
 def initialize_storge():
     with shelve.open(DB) as s:
         try:
-            (__, ) = s['_serial']
+            __ = s['_serial']
+            del __
         except KeyError:
             s['_serial'] = 1
             logging.debug('database initialized')
         except Exception as e:
             logging.critical('Exception: {}'.format(e))
             raise SystemExit
+
+    global MASTER
+    if not MASTER:
+        M = hashlib.sha256()
+        M.update(bytes(getpass.getpass(prompt='Master password: '),
+                       encoding='utf-8'))
+        MASTER = M.hexdigest()
 
     return
 
@@ -239,10 +250,11 @@ def pw_pprint(keylist):
                                              'notes'.center(cols[3])))
         _sep(cols)
         for k in keylist:
-            print('| {} | {} | {} | {} |'.format(s[k].context.ljust(cols[0]),
-                                                 s[k].username.ljust(cols[1]),
-                                                 ''.ljust(cols[2]),
-                                                 s[k].note.ljust(cols[3])))
+            d = {'c': pw_decode(MASTER, s[k].context).ljust(cols[0]),
+                 'u': pw_decode(MASTER, s[k].username).ljust(cols[1]),
+                 'p': pw_decode(MASTER, s[k].password).ljust(cols[2]),
+                 'n': pw_decode(MASTER, s[k].note).ljust(cols[3])}
+            print('| {c} | {u} | {p} | {n} |'.format(**d))
         _sep(cols)
 
     return
@@ -254,15 +266,17 @@ def pws_add(args):
     logging.log(DEBUGV, 'add args: {}'.format(args))
 
     # generate the current key we want to work with
-    ctx = '{}_{}'.format(args.context, args.username)
+    ctx = '_{}_{}__'.format(args.context, args.username)
 
     with shelve.open(DB) as s:
         # get a list of all the keys in storage
         keylist = list(s.keys())
         logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+        keylist.remove('_serial')
 
         # check if it is already in the database
-        res = [key for key in keylist if ctx.lower() in key.lower()]
+        res = [key for key in keylist
+               if ctx.lower() in pw_decode(MASTER, key).lower()]
 
         if len(res):
             logging.debug('Context already in use. Aborting')
@@ -270,15 +284,18 @@ def pws_add(args):
                   'to update instead?')
         else:
             logging.debug('unused context')
+            password = pw_encode(MASTER, getpass.getpass())
 
-            entry = Entry(context=args.context,
-                          username=args.username,
-                          password='',
-                          note=args.note)
+            logging.log(DEBUGV, '{}, {}'.format(MASTER, password))
+
+            entry = Entry(context=pw_encode(MASTER, args.context),
+                          username=pw_encode(MASTER, args.username),
+                          password=password,
+                          note=pw_encode(MASTER, str(args.note)))
 
             logging.log(DEBUGV, entry)
 
-            key = '{}_{}'.format(s['_serial'], ctx)
+            key = pw_encode(MASTER, '{}_{}__'.format(s['_serial'], ctx))
             s[key] = entry
 
             print('Entry added.')
@@ -296,15 +313,17 @@ def pws_remove(args):
     # generate the current key we want to work with
     ctx = '_{}_'.format(args.context)
     if args.username:
-        ctx = '_{}_{}'.format(args.context, args.username)
+        ctx = '_{}_{}__'.format(args.context, args.username)
 
     with shelve.open(DB) as s:
         # get a list of all the keys in storage
         keylist = list(s.keys())
         logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+        keylist.remove('_serial')
 
         # check if it is already in the database
-        res = [key for key in keylist if ctx.lower() in key.lower()]
+        res = [key for key in keylist
+               if ctx.lower() in pw_decode(MASTER, key).lower()]
         logging.log(DEBUGV, 'result: {}'.format(res))
 
         if len(res) > 1:
@@ -328,15 +347,17 @@ def pws_update(args):
     # generate the current key we want to work with
     ctx = '_{}_'.format(args.context)
     if args.username:
-        ctx = '{}_{}'.format(args.context, args.username)
+        ctx = '_{}_{}__'.format(args.context, args.username)
 
     with shelve.open(DB) as s:
         # get a list of all the keys in storage
         keylist = list(s.keys())
         logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+        keylist.remove('_serial')
 
         # check if it is already in the database
-        res = [key for key in keylist if ctx.lower() in key.lower()]
+        res = [key for key in keylist
+               if ctx.lower() in pw_decode(MASTER, key).lower()]
         logging.log(DEBUGV, 'result: {}'.format(res))
 
         if len(res) > 1:
@@ -349,11 +370,12 @@ def pws_update(args):
         else:
             entry = s[res[0]]
             if args.new_username:
-                entry.username = args.new_username
+                entry.username = pw_encode(MASTER, args.new_username)
             if args.new_note:
-                entry.note = args.new_note
+                entry.note = pw_encode(MASTER, args.new_note)
             if args.new_password:
-                pass
+                password = pw_encode(MASTER, getpass.getpass())
+                entry.password = password
             s[res[0]] = entry
             print('Entry updated.')
     pw_pprint(res)
@@ -368,8 +390,12 @@ def pws_get(args):
     res = None
     with shelve.open(DB) as s:
         keylist = list(s.keys())
-        ctx = args.context
-        res = [x for x in keylist if ctx.lower() in x.lower()]
+        logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+        keylist.remove('_serial')
+
+        ctx = '_{}_'.format(args.context)
+        res = [key for key in keylist
+               if ctx.lower() in pw_decode(MASTER, key).lower()]
         if len(res) == 0:
             print('No result found.')
             return
