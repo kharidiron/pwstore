@@ -36,7 +36,7 @@ class Prompt(cmd.Cmd):
 
     def default(self, args):
         print('Error: command not recognized.')
-        return None
+        return
 
     def do_add(self, args):
         'Add an entry to the store.'
@@ -191,7 +191,7 @@ def initialize_storge():
             logging.critical('Exception: {}'.format(e))
             raise SystemExit
 
-    return None
+    return
 
 
 class Entry:
@@ -229,7 +229,7 @@ def pw_pprint(keylist):
                                              ''.ljust(cols[2], '-'),
                                              ''.ljust(cols[3], '-')))
     if not keylist:
-        return False
+        return
 
     with shelve.open(DB) as s:
         _sep(cols)
@@ -245,7 +245,7 @@ def pw_pprint(keylist):
                                                  str(s[k].note).ljust(cols[3])))
         _sep(cols)
 
-    return None
+    return
 
 
 def pws_add(args):
@@ -286,7 +286,7 @@ def pws_add(args):
             s['_serial'] = s['_serial'] + 1
             logging.debug('serial advanced')
 
-    return None
+    return
 
 
 def pws_remove(args):
@@ -310,15 +310,15 @@ def pws_remove(args):
         if len(res) > 1:
             print('More than one result found. You _must_ pass '
                   'the username option to update, in this case.')
-            return False
+            return
         if len(res) == 0:
             print('No result found.')
-            return False
+            return
 
         del s[res[0]]
         print('Entry has been removed.')
 
-    return None
+    return
 
 
 def pws_update(args):
@@ -342,10 +342,10 @@ def pws_update(args):
         if len(res) > 1:
             print('More than one result found. You _must_ pass '
                   'the username option to update, in this case.')
-            return False
+            return
         elif len(res) == 0:
             print('No result found.')
-            return False
+            return
         else:
             entry = s[res[0]]
             if args.new_username:
@@ -358,7 +358,7 @@ def pws_update(args):
             print('Entry updated.')
     pw_pprint(res)
 
-    return None
+    return
 
 
 def pws_get(args):
@@ -372,10 +372,10 @@ def pws_get(args):
         res = [x for x in keylist if ctx.lower() in x.lower()]
         if len(res) == 0:
             print('No result found.')
-            return False
+            return
     pw_pprint(res)
 
-    return None
+    return
 
 
 def pws_list(args):
@@ -388,14 +388,14 @@ def pws_list(args):
         keylist.remove('_serial')
     pw_pprint(keylist)
 
-    return None
+    return
 
 
 def pws_shred(args):
     """Shred storage (destroys all entries)"""
     logging.debug('in shred command')
 
-    return None
+    return
 
 
 def main(argv):
@@ -417,7 +417,7 @@ def main(argv):
 
     logger.debug('end of line.')
 
-    return None
+    return
 
 
 if __name__ == '__main__':
