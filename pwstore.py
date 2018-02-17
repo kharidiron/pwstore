@@ -25,8 +25,8 @@ import sys
 DB = 'pwstore.db'
 DEBUGV = 5
 logging.addLevelName(DEBUGV, 'VERBOSE')
-LEVEL = logging.DEBUG
-LEVEL = DEBUGV
+LEVEL = logging.INFO
+# LEVEL = DEBUGV
 
 
 class Prompt(cmd.Cmd):
@@ -183,7 +183,7 @@ def initialize_parser():
 def initialize_storge():
     with shelve.open(DB) as s:
         try:
-            _ = s['_serial']
+            (__, ) = s['_serial']
         except KeyError:
             s['_serial'] = 1
             logging.debug('database initialized')
@@ -206,7 +206,7 @@ class Entry:
         self.context = context
         self.username = username
         self.password = password
-        self.note = kwargs.get('note', '')
+        self.note = str(kwargs.get('note', ''))
         self.last_updated = datetime.datetime.now()
 
     def __eq__(self, other):
@@ -242,7 +242,7 @@ def pw_pprint(keylist):
             print('| {} | {} | {} | {} |'.format(s[k].context.ljust(cols[0]),
                                                  s[k].username.ljust(cols[1]),
                                                  ''.ljust(cols[2]),
-                                                 str(s[k].note).ljust(cols[3])))
+                                                 s[k].note.ljust(cols[3])))
         _sep(cols)
 
     return
