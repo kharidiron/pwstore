@@ -26,6 +26,7 @@ DB = 'pwstore.db'
 DEBUGV = 5
 logging.addLevelName(DEBUGV, 'VERBOSE')
 LEVEL = logging.DEBUG
+LEVEL = DEBUGV
 
 
 class Prompt(cmd.Cmd):
@@ -145,15 +146,17 @@ def initialize_parser():
     subcmd_remove = subparse.add_parser('remove',
                                         help='Remove an entry from the store.')
     subcmd_remove.add_argument('context', help='Context for entry.')
+    subcmd_remove.add_argument('--username', help='Username (if needed).')
     subcmd_remove.set_defaults(func=pws_remove)
 
     # update entry subparser
     subcmd_update = subparse.add_parser('update',
                                         help='Update an entry in the store.')
     subcmd_update.add_argument('context', help='Context for entry.')
-    subcmd_update.add_argument('-u', '--username', help='Update username.')
-    subcmd_update.add_argument('-p', '--password', help='Update password.')
-    subcmd_update.add_argument('-n', '--note', help='Update Notes.')
+    subcmd_update.add_argument('--username', help='Current Username.')
+    subcmd_update.add_argument('-u', '--new_username', help='Update username.')
+    subcmd_update.add_argument('-p', '--new_password', help='Update password.')
+    subcmd_update.add_argument('-n', '--new_note', help='Update Notes.')
     subcmd_update.set_defaults(func=pws_update)
 
     # get an entry from storage
@@ -217,24 +220,54 @@ class Entry:
                           self.last_updated))
 
 
+def pw_pprint(keylist):
+    cols = [14, 14, 14, 20]
+
+    def _sep(cols):
+        print('|-{}-|-{}-|-{}-|-{}-|'.format(''.ljust(cols[0], '-'),
+                                             ''.ljust(cols[1], '-'),
+                                             ''.ljust(cols[2], '-'),
+                                             ''.ljust(cols[3], '-')))
+    if not keylist:
+        return False
+
+    with shelve.open(DB) as s:
+        _sep(cols)
+        print('| {} | {} | {} | {} |'.format('context'.center(cols[0]),
+                                             'username'.center(cols[1]),
+                                             'password'.center(cols[2]),
+                                             'notes'.center(cols[3])))
+        _sep(cols)
+        for k in keylist:
+            print('| {} | {} | {} | {} |'.format(s[k].context.ljust(cols[0]),
+                                                 s[k].username.ljust(cols[1]),
+                                                 ''.ljust(cols[2]),
+                                                 str(s[k].note).ljust(cols[3])))
+        _sep(cols)
+
+    return None
+
+
 def pws_add(args):
     """Add entry to storage."""
     logging.debug('in add command')
     logging.log(DEBUGV, 'add args: {}'.format(args))
+
+    # generate the current key we want to work with
+    ctx = '{}_{}'.format(args.context, args.username)
 
     with shelve.open(DB) as s:
         # get a list of all the keys in storage
         keylist = list(s.keys())
         logging.log(DEBUGV, 'keylist: {}'.format(keylist))
 
-        # generate the current key we want to work with
-        ctx = '{}_{}'.format(args.context, args.username)
-
         # check if it is already in the database
-        res = list(filter(lambda x: x.endswith(ctx), keylist))
+        res = [key for key in keylist if ctx.lower() in key.lower()]
 
         if len(res):
-            logging.warning('Context already in use.')
+            logging.debug('Context already in use. Aborting')
+            print('Cannot add - this pattern already exists. Did you mean '
+                  'to update instead?')
         else:
             logging.debug('unused context')
 
@@ -248,7 +281,7 @@ def pws_add(args):
             key = '{}_{}'.format(s['_serial'], ctx)
             s[key] = entry
 
-            logging.info('Entry added.')
+            print('Entry added.')
 
             s['_serial'] = s['_serial'] + 1
             logging.debug('serial advanced')
@@ -260,12 +293,70 @@ def pws_remove(args):
     """Remove entry from storage."""
     logging.debug('in remove command')
 
+    # generate the current key we want to work with
+    ctx = '_{}_'.format(args.context)
+    if args.username:
+        ctx = '_{}_{}'.format(args.context, args.username)
+
+    with shelve.open(DB) as s:
+        # get a list of all the keys in storage
+        keylist = list(s.keys())
+        logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+
+        # check if it is already in the database
+        res = [key for key in keylist if ctx.lower() in key.lower()]
+        logging.log(DEBUGV, 'result: {}'.format(res))
+
+        if len(res) > 1:
+            print('More than one result found. You _must_ pass '
+                  'the username option to update, in this case.')
+            return False
+        if len(res) == 0:
+            print('No result found.')
+            return False
+
+        del s[res[0]]
+        print('Entry has been removed.')
+
     return None
 
 
 def pws_update(args):
     """Update entry in storage."""
     logging.debug('in update command')
+
+    # generate the current key we want to work with
+    ctx = '_{}_'.format(args.context)
+    if args.username:
+        ctx = '{}_{}'.format(args.context, args.username)
+
+    with shelve.open(DB) as s:
+        # get a list of all the keys in storage
+        keylist = list(s.keys())
+        logging.log(DEBUGV, 'keylist: {}'.format(keylist))
+
+        # check if it is already in the database
+        res = [key for key in keylist if ctx.lower() in key.lower()]
+        logging.log(DEBUGV, 'result: {}'.format(res))
+
+        if len(res) > 1:
+            print('More than one result found. You _must_ pass '
+                  'the username option to update, in this case.')
+            return False
+        elif len(res) == 0:
+            print('No result found.')
+            return False
+        else:
+            entry = s[res[0]]
+            if args.new_username:
+                entry.username = args.new_username
+            if args.new_note:
+                entry.note = args.new_note
+            if args.new_password:
+                pass
+            s[res[0]] = entry
+            print('Entry updated.')
+    pw_pprint(res)
 
     return None
 
@@ -274,6 +365,16 @@ def pws_get(args):
     """Get entry from storage."""
     logging.debug('in get command')
 
+    res = None
+    with shelve.open(DB) as s:
+        keylist = list(s.keys())
+        ctx = args.context
+        res = [x for x in keylist if ctx.lower() in x.lower()]
+        if len(res) == 0:
+            print('No result found.')
+            return False
+    pw_pprint(res)
+
     return None
 
 
@@ -281,29 +382,11 @@ def pws_list(args):
     """List all entries in storage."""
     logging.debug('in list command')
 
-    cols = [14, 14, 14, 20]
-
-    def _sep(cols):
-        print('|-{}-|-{}-|-{}-|-{}-|'.format(''.ljust(cols[0], '-'),
-                                             ''.ljust(cols[1], '-'),
-                                             ''.ljust(cols[2], '-'),
-                                             ''.ljust(cols[3], '-')))
-
+    keylist = None
     with shelve.open(DB) as s:
-        _sep(cols)
-        print('| {} | {} | {} | {} |'.format('context'.center(cols[0]),
-                                             'username'.center(cols[1]),
-                                             'password'.center(cols[2]),
-                                             'notes'.center(cols[3])))
-        _sep(cols)
         keylist = list(s.keys())
         keylist.remove('_serial')
-        for k in keylist:
-            print('| {} | {} | {} | {} |'.format(s[k].context.ljust(cols[0]),
-                                                 s[k].username.ljust(cols[1]),
-                                                 ''.ljust(cols[2]),
-                                                 str(s[k].note).ljust(cols[3])))
-        _sep(cols)
+    pw_pprint(keylist)
 
     return None
 
