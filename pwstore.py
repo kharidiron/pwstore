@@ -23,15 +23,21 @@ import shelve
 import sys
 
 
-DB = 'pwstore.db'
+# custom log level, for when I need MOAR VERBOSE
 DEBUGV = 5
 logging.addLevelName(DEBUGV, 'VERBOSE')
+
+# current log level
 LEVEL = logging.INFO
 
+# globals
+DB = 'pwstore.db'
 MASTER = None
 
 
 class Prompt(cmd.Cmd):
+    """Prompt mode. So one doesn't have to keep typing the master password."""
+
     intro = ('Password Store - console mode\n'
              'Type help or ? for a list of commands.\n')
     prompt = '(pwstore) '
