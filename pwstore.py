@@ -10,7 +10,7 @@
 
 """
 
-__version__ = '0.1-dev'
+__version__ = '0.8-dev'
 
 import argparse
 import base64
@@ -27,7 +27,6 @@ DB = 'pwstore.db'
 DEBUGV = 5
 logging.addLevelName(DEBUGV, 'VERBOSE')
 LEVEL = logging.INFO
-# LEVEL = DEBUGV
 
 MASTER = None
 
@@ -86,6 +85,10 @@ class Prompt(cmd.Cmd):
 
 
 def pw_encode(key, clear):
+    """Vigenère cipher encoder.
+
+    Lifted from here: https://stackoverflow.com/a/38223403"""
+
     enc = []
     for i in range(len(clear)):
         key_c = key[i % len(key)]
@@ -96,6 +99,10 @@ def pw_encode(key, clear):
 
 
 def pw_decode(key, enc):
+    """Vigenère cipher decoder.
+
+    Lifted from here: https://stackoverflow.com/a/38223403"""
+
     dec = []
     enc = base64.urlsafe_b64decode(enc).decode()
     for i in range(len(enc)):
@@ -184,6 +191,11 @@ def initialize_parser():
 
 
 def initialize_storge():
+    """Check for a database and try to load it.
+
+    If ones doesn't already exist, create it. Afterwards, get the master
+    password for reading the database from the user."""
+
     with shelve.open(DB) as s:
         try:
             __ = s['_serial']
@@ -218,27 +230,24 @@ class Entry:
         self.username = username
         self.password = password
         self.note = str(kwargs.get('note', ''))
+        self.date_added = datetime.datetime.now()
         self.last_updated = datetime.datetime.now()
-
-    def __eq__(self, other):
-        return isinstance(other, Entry)
-
-    def __repr__(self):
-        return ('<Entry(context={}, username={}, note={}, last_updated={})>'
-                ''.format(self.context,
-                          self.username,
-                          self.note,
-                          self.last_updated))
 
 
 def pw_pprint(keylist):
+    """Pretty-print entries in the console."""
+
+    # column widths
     cols = [14, 14, 14, 20]
 
     def _sep(cols):
+        # helper function for printing nice horizontal lines
         print('|-{}-|-{}-|-{}-|-{}-|'.format(''.ljust(cols[0], '-'),
                                              ''.ljust(cols[1], '-'),
                                              ''.ljust(cols[2], '-'),
                                              ''.ljust(cols[3], '-')))
+
+    # do nothing if there is nothing to be printed
     if not keylist:
         return
 
@@ -263,7 +272,6 @@ def pw_pprint(keylist):
 def pws_add(args):
     """Add entry to storage."""
     logging.debug('in add command')
-    logging.log(DEBUGV, 'add args: {}'.format(args))
 
     # generate the current key we want to work with
     ctx = '_{}_{}__'.format(args.context, args.username)
@@ -284,22 +292,21 @@ def pws_add(args):
                   'to update instead?')
         else:
             logging.debug('unused context')
-            password = pw_encode(MASTER, getpass.getpass())
 
-            logging.log(DEBUGV, '{}, {}'.format(MASTER, password))
-
+            # builds the entry. prompts user for password
             entry = Entry(context=pw_encode(MASTER, args.context),
                           username=pw_encode(MASTER, args.username),
-                          password=password,
+                          password=pw_encode(MASTER, getpass.getpass()),
                           note=pw_encode(MASTER, str(args.note)))
 
             logging.log(DEBUGV, entry)
 
+            # create entry key and stores it
             key = pw_encode(MASTER, '{}_{}__'.format(s['_serial'], ctx))
             s[key] = entry
-
             print('Entry added.')
 
+            # advance the serial number
             s['_serial'] = s['_serial'] + 1
             logging.debug('serial advanced')
 
@@ -330,12 +337,12 @@ def pws_remove(args):
             print('More than one result found. You _must_ pass '
                   'the username option to update, in this case.')
             return
-        if len(res) == 0:
+        elif len(res) == 0:
             print('No result found.')
             return
-
-        del s[res[0]]
-        print('Entry has been removed.')
+        else:
+            del s[res[0]]
+            print('Entry has been removed.')
 
     return
 
@@ -361,23 +368,29 @@ def pws_update(args):
         logging.log(DEBUGV, 'result: {}'.format(res))
 
         if len(res) > 1:
-            print('More than one result found. You _must_ pass '
-                  'the username option to update, in this case.')
+            print('More than one entry found. You _must_ pass the '
+                  'username option to update, in this case.')
             return
         elif len(res) == 0:
-            print('No result found.')
+            print('No entry found for that context.')
             return
         else:
             entry = s[res[0]]
+
             if args.new_username:
                 entry.username = pw_encode(MASTER, args.new_username)
+
             if args.new_note:
                 entry.note = pw_encode(MASTER, args.new_note)
+
             if args.new_password:
-                password = pw_encode(MASTER, getpass.getpass())
-                entry.password = password
+                entry.password = pw_encode(MASTER, getpass.getpass())
+
+            entry.last_updated = datetime.datetime.now()
+
             s[res[0]] = entry
             print('Entry updated.')
+
     pw_pprint(res)
 
     return
@@ -387,7 +400,6 @@ def pws_get(args):
     """Get entry from storage."""
     logging.debug('in get command')
 
-    res = None
     with shelve.open(DB) as s:
         keylist = list(s.keys())
         logging.log(DEBUGV, 'keylist: {}'.format(keylist))
@@ -397,8 +409,9 @@ def pws_get(args):
         res = [key for key in keylist
                if ctx.lower() in pw_decode(MASTER, key).lower()]
         if len(res) == 0:
-            print('No result found.')
+            print('No results were found.')
             return
+
     pw_pprint(res)
 
     return
@@ -439,7 +452,9 @@ def main(argv):
 
     args = parser.parse_args(argv)
     args.func(args)
-    logger.log(DEBUGV, 'args: {}'.format(args))
+
+    global MASTER
+    del MASTER
 
     logger.debug('end of line.')
 
