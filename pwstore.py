@@ -10,7 +10,7 @@
 
 """
 
-__version__ = '0.8-dev'
+__version__ = '1.0'
 
 import argparse
 import base64
@@ -127,13 +127,16 @@ def pw_encode(key, clear):
         enc_c = chr((ord(clear[i]) + ord(key_c)) % 256)
         enc.append(enc_c)
 
-    return base64.urlsafe_b64encode("".join(enc).encode()).decode()
+    return base64.urlsafe_b64encode(''.join(enc).encode()).decode()
 
 
 def pw_decode(key, enc):
     """Vigenère cipher decoder.
 
-    Lifted from here: https://stackoverflow.com/a/38223403"""
+    Lifted from here: https://stackoverflow.com/a/38223403
+
+    :return: string
+    """
 
     dec = []
     enc = base64.urlsafe_b64decode(enc).decode()
@@ -142,11 +145,13 @@ def pw_decode(key, enc):
         dec_c = chr((256 + ord(enc[i]) - ord(key_c)) % 256)
         dec.append(dec_c)
 
-    return "".join(dec)
+    return ''.join(dec)
 
 
 def initialize_logger():
     """Initialize logging for debugging.
+
+    :return: logging object
     """
 
     logger = logging.getLogger()
@@ -167,8 +172,9 @@ def initialize_logger():
 def initialize_cli_parser():
     """Initializes function to parse command-line input.
 
-    :return: ArgumentParser object.
+    :return: ArgumentParser object
     """
+
     logging.debug('initializing parser')
 
     # core parser
@@ -226,19 +232,25 @@ def initialize_storge():
     """Check for a database and try to load it.
 
     If ones doesn't already exist, create it. Afterwards, get the master
-    password for reading the database from the user."""
+    password for reading the database from the user.
+
+    :return: None
+    """
 
     with shelve.open(DB) as s:
         try:
+            # Check if a serial number exists.
             __ = s['_serial']
             del __
         except KeyError:
+            # Initialize the DB if it doesn't
             s['_serial'] = 1
             logging.debug('database initialized')
         except Exception as e:
             logging.critical('Exception: {}'.format(e))
             raise SystemExit
 
+    # Get the master password. Keep it around until we exit
     global MASTER
     if not MASTER:
         M = hashlib.sha256()
@@ -250,6 +262,9 @@ def initialize_storge():
 
 
 class Entry:
+    """ Password entry prototype
+    """
+
     context = ''
     username = ''
     password = ''
@@ -267,7 +282,10 @@ class Entry:
 
 
 def pw_pprint(keylist):
-    """Pretty-print entries in the console."""
+    """Pretty-print entries in the console.
+
+    :return: None
+    """
 
     # column widths
     cols = [14, 14, 14, 20]
@@ -302,7 +320,9 @@ def pw_pprint(keylist):
 
 
 def pws_add(args):
-    """Add entry to storage."""
+    """Add entry to storage.
+    """
+
     logging.debug('in add command')
 
     # generate the current key we want to work with
@@ -346,7 +366,9 @@ def pws_add(args):
 
 
 def pws_remove(args):
-    """Remove entry from storage."""
+    """Remove entry from storage.
+    """
+
     logging.debug('in remove command')
 
     # generate the current key we want to work with
@@ -380,7 +402,9 @@ def pws_remove(args):
 
 
 def pws_update(args):
-    """Update entry in storage."""
+    """Update entry in storage.
+    """
+
     logging.debug('in update command')
 
     # generate the current key we want to work with
@@ -427,7 +451,9 @@ def pws_update(args):
 
 
 def pws_get(args):
-    """Get entry from storage."""
+    """Get entry from storage.
+    """
+
     logging.debug('in get command')
 
     with shelve.open(DB) as s:
@@ -448,7 +474,9 @@ def pws_get(args):
 
 
 def pws_list(args):
-    """List all entries in storage."""
+    """List all entries in storage.
+    """
+
     logging.debug('in list command')
 
     keylist = None
@@ -461,8 +489,12 @@ def pws_list(args):
 
 
 def pws_shred(args):
-    """Shred storage (destroys all entries)"""
+    """Shred storage (destroys all entries).
+    """
+
     logging.debug('in shred command')
+
+    raise NotImplemented
 
     return
 
@@ -485,8 +517,6 @@ def main(argv):
 
     global MASTER
     del MASTER
-
-    logger.debug('end of line.')
 
     return
 
