@@ -6,7 +6,7 @@
    A commandline-based secure password storage system.
 
    :copyright: 2018 by Kharidiron
-   :license: I'll decide this later.
+   :license: MIT
 
 """
 
