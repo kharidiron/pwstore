@@ -20,6 +20,7 @@ import getpass
 import hashlib
 import logging
 import shelve
+import shlex
 import sys
 
 
@@ -42,44 +43,69 @@ class Prompt(cmd.Cmd):
              'Type help or ? for a list of commands.\n')
     prompt = '(pwstore) '
 
+    def __init__(self, parser):
+        super(Prompt, self).__init__()
+        self.parser = parser
+
     def default(self, args):
         print('Error: command not recognized.')
         return
 
     def do_add(self, args):
         'Add an entry to the store.'
-        if len(args) == 0:
-            print('usage goes here')
-            return
-        pws_add(args)
+        arg_list = list(shlex.split(args))
+        arg_list.insert(0, 'add')
+        print(arg_list)
+
+        try:
+            argp = self.parser.parse_args(arg_list)
+            pws_add(argp)
+        except SystemExit:
+            pass
 
     def do_remove(self, args):
         'Remove an entry from the store.'
-        if len(args) == 0:
-            print('usage goes here')
-            return
-        pws_remove(args)
+        arg_list = list(shlex.split(args))
+        arg_list.insert(0, 'remove')
+
+        try:
+            argp = self.parser.parse_args(arg_list)
+            pws_remove(argp)
+        except SystemExit:
+            pass
 
     def do_update(self, args):
         'Update an entry in the store.'
-        if len(args) == 0:
-            print('usage goes here')
-            return
-        pws_update(args)
+        arg_list = list(shlex.split(args))
+        arg_list.insert(0, 'update')
+
+        try:
+            argp = self.parser.parse_args(arg_list)
+            pws_update(argp)
+        except SystemExit:
+            pass
 
     def do_get(self, args):
         'Get an entry from the store.'
-        if len(args) == 0:
-            print('usage goes here')
-            return
-        pws_get(args)
+        arg_list = list(shlex.split(args))
+        arg_list.insert(0, 'get')
+
+        try:
+            argp = self.parser.parse_args(arg_list)
+            pws_get(argp)
+        except SystemExit:
+            pass
 
     def do_list(self, args):
         'List all entries in the store.'
-        if len(args) == 0:
-            print('usage goes here')
-            return
-        pws_list(args)
+        arg_list = list(shlex.split(args))
+        arg_list.insert(0, 'list')
+
+        try:
+            argp = self.parser.parse_args(arg_list)
+            pws_list(argp)
+        except SystemExit:
+            pass
 
     def do_exit(self, args):
         self.do_quit(args)
@@ -138,7 +164,7 @@ def initialize_logger():
     return logger
 
 
-def initialize_parser():
+def initialize_cli_parser():
     """Initializes function to parse command-line input.
 
     :return: ArgumentParser object.
@@ -397,8 +423,6 @@ def pws_update(args):
             s[res[0]] = entry
             print('Entry updated.')
 
-    pw_pprint(res)
-
     return
 
 
@@ -447,13 +471,13 @@ def main(argv):
     logger = initialize_logger()
     logger.debug('argv: {}'.format(argv))
 
-    parser = initialize_parser()
+    parser = initialize_cli_parser()
 
     initialize_storge()
 
     if len(argv) == 0:
         logger.debug('starting console mode.')
-        prompt = Prompt()
+        prompt = Prompt(parser=parser)
         prompt.cmdloop()
 
     args = parser.parse_args(argv)
